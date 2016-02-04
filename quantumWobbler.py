@@ -19,6 +19,7 @@ class Calculation(HasTraits):
     muma = 0.0
     mu = 0.0
 
+    helpme = Button()
     solve = Button()
 
     plot = Instance(Plot)
@@ -53,6 +54,7 @@ class Calculation(HasTraits):
                         Item(name='D0'),
                         Item(name='Re'),
                         Item(name='levels'),
+                        Item('helpme', show_label=False, label="\nHelp Me!\n"),
                         Item('solve', show_label=False, label="\nSolve the System!\n")
                     ),
                     Group(
@@ -74,6 +76,17 @@ class Calculation(HasTraits):
 
     def __init__(self):
         self.greeting()
+
+    def _helpme_fired(self):
+        self.add_line("Help information for quantum wobbler:", True)
+        self.add_line("Potential file should be comma separated values reading:\n\"separation,value\"\n\"separation,value\"\n...\n")
+        self.add_line("The potential should be normalised so it tends to 0 at long range.")
+        self.add_line(" i.e. the energy of the isolated atoms should be subtracted from the energy of the interacting pair")
+        self.add_line("In this way D0 is the energy difference (in Hartree) between the equilibrium, and dissociation.")
+        self.add_line("Re is the equilibrium distance of the diatomic. If this is ommitted the program will estimate it as the separation of the lowest energy data point. This can lead to inaccuracy.")
+        self.add_line("M1 and M2 are the mass of atom 1 and 2 respectively. The atom numbering is arbitrary.")
+        self.add_line("Levels gives the levels that should be optimized. These are supplied as a comma separated list. Ranges can be specified with a hyphen.")
+
 
     def _loadPot_fired(self):
         self.Rlist = []
@@ -326,9 +339,9 @@ class Calculation(HasTraits):
         return True
 
     def greeting(self):
-        self.add_line("=============================")
-        self.add_line("       QUANTUM WOBBLER")
-        self.add_line("=============================")
+        self.add_line("==========================")
+        self.add_line("     QUANTUM WOBBLER")
+        self.add_line("==========================")
         self.add_line("\nA Diatomic vibrations solver.")
         self.add_line("By James Furness\n")
 
