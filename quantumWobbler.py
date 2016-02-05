@@ -114,31 +114,6 @@ class Calculation(HasTraits):
         self.add_line("Loading potential from: "+str(dialog.path))
         self._toInterest_fired()
 
-        # try:
-        #     
-        #     if not dialog.open():
-        #         self.add_line("I can't open the file \'" + str(dialog.path)+"\'")
-        #         return
-        #     inp = open(dialog.path,'r')
-        #     self.potential = []
-        #     for line in inp:
-        #         raw = line.strip().split(',')
-        #         raw = filter(None, raw)
-
-        #         try:
-        #             R = float(raw[0])
-        #             U = float(raw[1])
-        #             self.Rlist.append(R)
-        #             self.Ulist.append(U)
-
-        #         except ValueError:
-        #             self.add_line("I cant convert this to two floats:")
-        #             self.add_line("\""+str(line)+"\"")
-
-        #     
-        #     
-        # except IOError:
-        #     self.add_line("I can't find the file \'" + str(dialog.path)+"\'")
 
     def _toInterest_fired(self):
         self.D0=abs(self.D0)
@@ -280,7 +255,6 @@ class Calculation(HasTraits):
 
         for val in self.levelsToFind:
             if val < len(self.convergedValues):
-                print val, self.convergedValues[val]
                 plotData.set_data("eig"+str(val), [self.convergedValues[val], self.convergedValues[val]])
 
         plot = Plot(plotData)

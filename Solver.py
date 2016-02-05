@@ -60,6 +60,9 @@ def readInput(inpname):
     ]
 
     """
+
+    print "Now opening potential file: "+str(inpname)
+
     try:
         finput = open(inpname,'r')
     except IOError:
@@ -153,11 +156,15 @@ def readInput(inpname):
         print "INPUT ERROR: No mass found for atom 2.  e.g. M2 = 1.0"
         sys.exit()
 
+
+
     # Determine a.u. reduced mass for potential scaling
     out.mu = reducedMass(convertMassToAU(out.M1), convertMassToAU(out.M2))
     out.muma = reducedMass(out.M1, out.M2)
 
     out.D0 = abs(out.D0)
+
+    setUtoRe(out.Ulist)
 
     if len(out.levelsToFind) == 0:
         print "No levels asked for."
@@ -244,9 +251,9 @@ def driver(data, GUI=None):
         if val < len(data.convergedValues):
             if data.convergedValues[val] != "UNBOUND":
                 if GUI is not None:
-                    GUI.add_line("v"+str(val)+": " + str(data.convergedValues[val])+" Eh\t"+str(abs(data.convergedValues[val])*219474.63)+" cm-1")
+                    GUI.add_line("v"+str(val)+": " + str(data.D0 - abs(data.convergedValues[val]))+" Eh\t"+str((data.D0 - abs(data.convergedValues[val]))*219474.63)+" cm-1")
                 else:
-                    print "v"+str(val)+": " + str(data.convergedValues[val])+" Eh\t"+str(abs(data.convergedValues[val])*219474.63)+" cm-1"
+                    print "v"+str(val)+": " + str(data.D0 - abs(data.convergedValues[val]))+" Eh\t"+str((data.D0 - abs(data.convergedValues[val]))*219474.63)+" cm-1"
             else:
                 if GUI is not None:
                     GUI.add_line("v"+str(val)+" is not a bound state!")
@@ -274,8 +281,11 @@ def plotResults(data):
 
 
     for val in data.convergedValues:
-        Pplot.plot(R_start_stop, [val, val], color='green')
-
+        try:
+            float(val)
+            Pplot.plot(R_start_stop, [float(val), float(val)], color='green')
+        except ValueError:
+            print "Unbound in plot"
     plt.legend(loc=4)
     plt.show()
 
@@ -427,9 +437,9 @@ def morseEigs(data, GUI, alpha):
 
         data.guessEigVals.append(eig)
         if GUI is not None:
-            GUI.add_line("v"+str(n)+": "+str(eig))
+            GUI.add_line("v"+str(n)+": "+str(eig)+" -> "+str(enToEh(data.mu,eig))+" Eh")
         else:
-            print "v"+str(n)+": "+str(eig)
+            print "v"+str(n)+": "+str(eig)+" -> "+str(enToEh(data.mu,eig))+" Eh"
         n += 1
     
     if GUI is not None:
@@ -465,7 +475,7 @@ def integrate(GUI, data, E):
         if GUI is not None:
             GUI.add_line( "Unbound state!")
         else:
-            print "Unbound stat!"
+            print "Unbound state!"
         return "UNBOUND"
 
     # Integrate inwards
