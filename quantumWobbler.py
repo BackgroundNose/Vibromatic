@@ -8,9 +8,14 @@ from pyface.api import FileDialog, confirm, YES
 from Solver import *
 
 class Calculation(HasTraits):
-    M1 = Float(2)
-    M2 = Float(2)
-    D0 = Float(-0.00125352)
+    """
+    GUI front end for the "Quantum Wobbler" Solver.py module.
+
+    Written by James Furness (2016)
+    """
+    M1 = Float(0)
+    M2 = Float(0)
+    D0 = Float(0)
     Re = Float()
     levels = String("0,1,2-6")
     levelsToFind = []
@@ -97,32 +102,43 @@ class Calculation(HasTraits):
         self.Plists = []
         self.muma = 0.0
         self.mu = 0.0
-        try:
-            dialog = FileDialog(title='Select a potential',action='open')
-            if not dialog.open():
-                self.add_line("I can't open the file \'" + str(dialog.path)+"\'")
-                return
-            inp = open(dialog.path,'r')
-            self.potential = []
-            for line in inp:
-                raw = line.strip().split(',')
-                raw = filter(None, raw)
 
-                try:
-                    R = float(raw[0])
-                    U = float(raw[1])
-                    self.Rlist.append(R)
-                    self.Ulist.append(U)
+        dialog = FileDialog(title='Select a potential',action='open')
 
-                except ValueError:
-                    self.add_line("I cant convert this to two floats:")
-                    self.add_line("\""+str(line)+"\"")
+        if not dialog.open():
+            self.add_line("I can't open the file \'" + str(dialog.path)+"\'")
+            return
 
-            self.plotRU()
-            self.add_line("Loading new potential!",True)
-            self.add_line("Loading potential from: "+str(inp.name))
-        except IOError:
-            self.add_line("I can't find the file \'" + str(dialog.path)+"\'")
+        self.updateFromDetails(readInput(dialog.path))
+        self.add_line("Loading new potential!",True)
+        self.add_line("Loading potential from: "+str(dialog.path))
+        self._toInterest_fired()
+
+        # try:
+        #     
+        #     if not dialog.open():
+        #         self.add_line("I can't open the file \'" + str(dialog.path)+"\'")
+        #         return
+        #     inp = open(dialog.path,'r')
+        #     self.potential = []
+        #     for line in inp:
+        #         raw = line.strip().split(',')
+        #         raw = filter(None, raw)
+
+        #         try:
+        #             R = float(raw[0])
+        #             U = float(raw[1])
+        #             self.Rlist.append(R)
+        #             self.Ulist.append(U)
+
+        #         except ValueError:
+        #             self.add_line("I cant convert this to two floats:")
+        #             self.add_line("\""+str(line)+"\"")
+
+        #     
+        #     
+        # except IOError:
+        #     self.add_line("I can't find the file \'" + str(dialog.path)+"\'")
 
     def _toInterest_fired(self):
         self.D0=abs(self.D0)
@@ -180,7 +196,7 @@ class Calculation(HasTraits):
         out.M1 = self.M1
         out.M2 = self.M2
         out.D0 = abs(self.D0)
-        out.levels = self.levelsToFind[:]
+        out.levels = ""+self.levels
         out.guessEigVals = self.guessEigList[:]
         out.convergedValues = self.convergedValues[:]
         out.levelsToFind = self.levelsToFind[:]
@@ -190,9 +206,17 @@ class Calculation(HasTraits):
         self.guessEigList = data.guessEigVals[:]
         self.convergedValues = data.convergedValues[:]
         self.levelsToFind = data.levelsToFind[:]
+        self.levels = ""+data.levels
         self.morseList = data.morseList[:]
         self.Ulist = data.Ulist[:]
         self.D0 = data.D0
+        self.M1 = data.M1
+        self.M2 = data.M2
+        self.Rlist = data.Rlist[:]
+        self.levelsToFind = data.levelsToFind[:]
+        self.mu = data.mu
+        self.muma = data.muma
+
 
 
     def _solve_fired(self):
@@ -209,15 +233,11 @@ class Calculation(HasTraits):
             self.Re = self.Rlist[self.Ulist.index(min(self.Ulist))]
             self.add_line("Re set as: "+str(self.Re))
 
-        setUtoRe(self.Ulist)
-
         self.muma = reducedMass(self.M1, self.M2)
         self.mu = reducedMass(convertMassToAU(self.M1), convertMassToAU(self.M2))
         self.add_line("Converting Potential and D0 to 2 x reduced mass scale.")
         self.add_line("Reduced mass (au) = "+str(self.mu))
         self.add_line("Reduced mass (ma) = "+str(self.muma))
-        self.Ulist, self.D0 = convertUto2ReducedAU(self.mu, self.Ulist, self.D0)
-
 
         self.scaled = True
 
@@ -227,7 +247,7 @@ class Calculation(HasTraits):
         if len(data.levelsToFind) == 0:
             return
 
-        data  = driver(data, self)
+        data = driver(data, self)
 
         self.updateFromDetails(data)
 

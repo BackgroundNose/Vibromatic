@@ -4,171 +4,62 @@ from scipy.optimize import minimize_scalar
 import sys
 
 """
-This module actually solves the nuclear Schrodinger equation for a diatomic.
+This module solves the nuclear Schrodinger equation for a diatomic in a Born potential.
+
+The function 'driver' takes a filled 'Details' object and solves the probelm.
+The results of the calculation are returned in the object called with, a reference to the object
+is returned by the funciton.
+
+A Details object can be easily constructed using the function 'readInput', which is called with
+a filename. See the function's doc string for details. Of course one can also construct a details
+object in a script on the fly.
+
+The function 'plotResults' will take the data object returned by 'driver' and produce a 
+matplotlib plot of the potential and Eigenvalues.
+
+
+NOTE:
+As there is no interpolation ALL data points on the potential energy surface MUST have a constant 
+separation. e.g. 0.01, 0.02, 0.03, 0.04 ...
+
+Written by James Furness (2016)
+
 """
 
 class Details():
-    """Structure to hold the values read from input."""
-    Rlist = []
-    Ulist = []
-    bkpUlist = []
-    re = None
-    mu = None
-    muma = None
-    M1 = None
-    M2 = None
-    D0 = None
-    h = None
-    levels = []
-    guessEigVals = []
-    convergedValues = []
-    levelsToFind = []
-    morseList = []
-    Plists = []
-
-def driver(data, calc):
-    print "Beginning Quantum wobbler..."
-
-    data.bkpUlist = data.Ulist[:]
-
-    fig = generateStartingE(data, calc)
-
-    setUtoDe(data.Ulist, data.D0)
-
-
-
-    if len(data.guessEigVals) == 0:
-        if calc is not None:
-            calc.add_line("No bound Eigenvalues were found for guess potential.")
-            calc.add_line("For the hell of it, lets try optimizing something very nearly unbound...")
-        else:
-            print "No bound Eigenvalues were found for guess potential."
-            print "For the hell of it, lets try optimizing something very nearly unbound..."
-
-        # try looking for one right at the dissociation limit.
-        data.guessEigVals.append(-data.D0*0.95)
-
-    data.h = data.Rlist[-1] - data.Rlist[-2]      # This is the separation between R points
-
-    if calc is not None:
-        calc.add_line("\nR Points Separation: "+str(data.h))
-    else:
-        print "\nR Points Separation: "+str(data.h)
-
-    data.convergedValues = [0.0]*len(data.guessEigVals)
-    for val in data.levelsToFind:
-        if val >= len(data.guessEigVals):
-            if calc is not None:
-                calc.add_line("\nERROR: No guess state for level "+str(val))
-                calc.add_line("Possbily state is unbound, manual guesses to be implimented eventually...")
-            else:
-                print "\nERROR: No guess state for level "+str(val)
-                print "Possbily state is unbound, manual guesses to be implimented eventually..."
-        else:
-            if calc is not None:
-                calc.add_line("Optimizing level "+str(val),True)
-            else:
-                print "======================"
-                print " Optimizing level "+str(val)
-                print "======================"
-            data.convergedValues[val], tlist = optimizeEigenvalue(calc, data, data.guessEigVals[val])
-            data.Plists.append(tlist)
-
-
-    data.Ulist, tmp = revertFrom2ReducedAU(data.mu, data.Ulist, data.D0)
-    data.morseList, data.D0 = revertFrom2ReducedAU(data.mu, data.morseList, data.D0)
-    setUtoDe(data.morseList, data.D0)
-
-    for val in data.levelsToFind:
-        if val < len(data.convergedValues):
-            if data.convergedValues[val] != "UNBOUND":
-                data.convergedValues[val] = enToEh(data.mu, data.convergedValues[val])
+    """Structure to hold the values read from input and the results of the calculation."""
     
-    if calc is not None:
-        calc.add_line("Summary",True)
-    else:
-        print "==========="
-        print "  Summary"
-        print "==========="
-
-    for val in data.levelsToFind:
-        if val < len(data.convergedValues):
-            if data.convergedValues[val] != "UNBOUND":
-                if calc is not None:
-                    calc.add_line("v"+str(val)+": " + str(data.convergedValues[val])+" Eh\t"+str(abs(data.convergedValues[val])*219474.63)+" cm-1")
-                else:
-                    print "v"+str(val)+": " + str(data.convergedValues[val])+" Eh\t"+str(abs(data.convergedValues[val])*219474.63)+" cm-1"
-            else:
-                if calc is not None:
-                    calc.add_line("v"+str(val)+" is not a bound state!")
-                else:
-                    print "v"+str(val)+" is not a bound state!"
-
-    return data
-
-def convertUto2ReducedAU(mu, Ulist, deinf):
-    for i in range(0,len(Ulist)):
-        Ulist[i] *= 2*mu
-
-    deinf *= 2*mu
-    return Ulist, deinf
-
-def revertFrom2ReducedAU(mu, Ulist, deinf):
-    for i in range(0,len(Ulist)):
-        Ulist[i] /= 2*mu
-
-    deinf /= 2*mu
-    return Ulist, deinf
-
-def enToEh(mu, en):
-    return en/(2*mu)
-
-def getFloat(inp, lineNo):
-    try:
-        out = float(inp)
-    except ValueError:
-        print "INPUT ERROR: line ",lineNo
-        print "Unable to read expected float."
-        sys.exit()
-    return out
-
-def parseLevels(levels, calc=None):
-    levelsToFind = []
-    raw = levels.split(',')
-    for item in raw:
-        item = item.strip()
-        if item.find('-') != -1:
-            temp = item.split('-')
-            try:
-                for i in range(int(temp[0]), int(temp[1])+1):
-                    levelsToFind.append(i)
-            except ValueError:
-                if calc is not None:
-                    calc.add_line("ERROR: Problem in level choice!")
-                    calc.add_line("Choose individual levels with comma separation")
-                    calc.add_line("or a range with start-stop")
-                else:
-                    print "ERROR: Problem in level choice!"
-                    print "Choose individual levels with comma separation"
-                    print "or a range with start-stop"
-                return []
-        else:
-            try:
-                levelsToFind.append(int(item))
-            except ValueError:
-                if calc is not None:
-                    calc.add_line("ERROR: Problem in level choice!")
-                    calc.add_line("Choose individual levels with comma separation")
-                    calc.add_line("or a range with start-stop")
-                else:
-                    print "ERROR: Problem in level choice!"
-                    print "Choose individual levels with comma separation"
-                    print "or a range with start-stop"
-                return []
-
-    return levelsToFind
+    Rlist = []          # List of nuclear separations.
+    Ulist = []          # List of total energy points.
+    re = None           # equilibrium separation. Set by driver as min(Ulist).
+    mu = None           # reduced mass in atomic units.
+    muma = None         # reduced mass in Daltons.
+    M1 = None           # Mass of atom 1 in Daltons.
+    M2 = None           # Mass of atom 2 in Daltons.
+    D0 = None           # Dissociation energy in Hartrees.
+    h = None            # Separation between points in Rlist. Set by driver.
+    levels = ""         # String to be parsed requesting levels.
+    levelsToFind = []   # Integer list of states to solve, constructed from levels.
+    guessEigVals = []   # Starting guess values found by fitting a Morse potential.
+    convergedValues = []# List holding the values that were converged by driver.
+    morseList = []      # Morse potential value for each R point.
+    Plists = []         # List of lists containing normalised wavefunctions for each state.
 
 def readInput(inpname):
+    """
+    Creates a filled Details object from a file.
+    This file should have the structure:
+
+
+    M1 = <MASS ATOM 1>
+    M2 = <MASS ATOM 2>
+    D0 = <DISSOCIATION ENERGY>
+    LEVELS = <COMMA SEPARATED LIST AND HYPHENATED RANGE REQUESTING THESE VIBRATIONAL LEVELS. E.g. 1,2,3-5
+    [
+        <SEPARATION>,<TOTAL ENERGY>
+    ]
+
+    """
     try:
         finput = open(inpname,'r')
     except IOError:
@@ -212,6 +103,7 @@ def readInput(inpname):
                     out.M2 = getFloat(val, lineNo)
 
                 elif (field == "LEVELS"):
+                    out.levels = val
                     out.levelsToFind = parseLevels(val)
                 else:
                     print "WARNING: I don't understand the field " + field + " on line ", lineNo
@@ -261,23 +153,195 @@ def readInput(inpname):
         print "INPUT ERROR: No mass found for atom 2.  e.g. M2 = 1.0"
         sys.exit()
 
-    # Convert potential to be 0 at Re. (Currently always does this as no fitting is done).
-    setUtoRe(out.Ulist)
-
-
     # Determine a.u. reduced mass for potential scaling
     out.mu = reducedMass(convertMassToAU(out.M1), convertMassToAU(out.M2))
     out.muma = reducedMass(out.M1, out.M2)
 
-    # WHEN TESTING REMEMBER! THE MORSE POTENTIAL FOR COOLEY'S REFERENCE HAS THIS BUILT IN. SET MU to 0.5
-    # deinf = 0.16454007507   # AND SET THIS TO 188.4355
+    out.D0 = abs(out.D0)
 
-    # Convert potential and de to a.u. scaled reduced mass
-    out.Ulist, out.de = convertUto2ReducedAU(out.mu, out.Ulist, out.de)
-
-    out.de = abs(out.de)
+    if len(out.levelsToFind) == 0:
+        print "No levels asked for."
+        sys.exit("Please specify vibrational levels")
 
     return out
+
+def driver(data, GUI=None):
+    """
+    Actual working routine that solves the diatomic nuclear Schrodinger equation
+    for a given filled Details object.
+
+    Returns values by filling the relevant fields of the passed Details object.
+
+    of interest is convergedValues which holds the Eigenvalues or UNBOUND for failure.
+    """
+    print "Beginning Quantum wobbler..."
+
+    # Convert to mass scaled units
+    data.Ulist, data.D0 = convertUto2ReducedAU(data.mu, data.Ulist, data.D0)
+
+    setUtoRe(data.Ulist)
+
+    generateStartingE(data, GUI)
+
+    setUtoDe(data.Ulist, data.D0)
+
+    if len(data.guessEigVals) == 0:
+        if GUI is not None:
+            GUI.add_line("No bound Eigenvalues were found for guess potential.")
+            GUI.add_line("For the hell of it, lets try optimizing something very nearly unbound...")
+        else:
+            print "No bound Eigenvalues were found for guess potential."
+            print "For the hell of it, lets try optimizing something very nearly unbound..."
+
+        # try looking for one right at the dissociation limit.
+        data.guessEigVals.append(-data.D0*0.95)
+
+    data.h = data.Rlist[-1] - data.Rlist[-2]      # This is the separation between R points
+
+    if GUI is not None:
+        GUI.add_line("\nR Points Separation: "+str(data.h))
+    else:
+        print "\nR Points Separation: "+str(data.h)
+
+    data.convergedValues = [0.0]*len(data.guessEigVals)
+    for val in data.levelsToFind:
+        if val >= len(data.guessEigVals):
+            if GUI is not None:
+                GUI.add_line("\nERROR: No guess state from fitted morse potential for level "+str(val))
+                GUI.add_line("Possbily state is unbound, manual guesses should be implimented eventually...")
+            else:
+                print "\nERROR: No guess state from fitted morse potential for level "+str(val)
+                print "Possbily state is unbound, manual guesses should be implimented eventually..."
+        else:
+            if GUI is not None:
+                GUI.add_line("Optimizing level "+str(val),True)
+            else:
+                print "======================"
+                print " Optimizing level "+str(val)
+                print "======================"
+            data.convergedValues[val], tlist = optimizeEigenvalue(GUI, data, data.guessEigVals[val])
+            data.Plists.append(tlist)
+
+
+    data.Ulist, tmp = revertFrom2ReducedAU(data.mu, data.Ulist, data.D0)
+    data.morseList, data.D0 = revertFrom2ReducedAU(data.mu, data.morseList, data.D0)
+    setUtoDe(data.morseList, data.D0)
+
+
+    for val in data.levelsToFind:
+        if val < len(data.convergedValues):
+            if data.convergedValues[val] != "UNBOUND":
+                data.convergedValues[val] = enToEh(data.mu, data.convergedValues[val])
+    
+    if GUI is not None:
+        GUI.add_line("Summary",True)
+    else:
+        print "==========="
+        print "  Summary"
+        print "==========="
+
+    for val in data.levelsToFind:
+        if val < len(data.convergedValues):
+            if data.convergedValues[val] != "UNBOUND":
+                if GUI is not None:
+                    GUI.add_line("v"+str(val)+": " + str(data.convergedValues[val])+" Eh\t"+str(abs(data.convergedValues[val])*219474.63)+" cm-1")
+                else:
+                    print "v"+str(val)+": " + str(data.convergedValues[val])+" Eh\t"+str(abs(data.convergedValues[val])*219474.63)+" cm-1"
+            else:
+                if GUI is not None:
+                    GUI.add_line("v"+str(val)+" is not a bound state!")
+                else:
+                    print "v"+str(val)+" is not a bound state!"
+
+    return data
+
+def plotResults(data):
+    """
+    Will take a Details object returned by driver and plot the results.
+    """
+
+    Pfig = plt.figure()
+    Pplot = Pfig.add_subplot(111)
+
+    Pplot.set_xlim([min(data.Rlist), max(data.Rlist)])
+   
+    Pplot.set_ylim([-data.D0, data.D0/10.0])
+
+    Pplot.plot(data.Rlist, data.Ulist, color='blue', label="Potential")
+    Pplot.plot(data.Rlist, data.morseList, color='red', label="Morse Fit")
+
+    R_start_stop = [data.Rlist[0], data.Rlist[-1]]
+
+
+    for val in data.convergedValues:
+        Pplot.plot(R_start_stop, [val, val], color='green')
+
+    plt.legend(loc=4)
+    plt.show()
+
+def convertUto2ReducedAU(mu, Ulist, deinf):
+    for i in range(0,len(Ulist)):
+        Ulist[i] *= 2*mu
+
+    deinf *= 2*mu
+    return Ulist, deinf
+
+def revertFrom2ReducedAU(mu, Ulist, deinf):
+    for i in range(0,len(Ulist)):
+        Ulist[i] /= 2*mu
+
+    deinf /= 2*mu
+    return Ulist, deinf
+
+def enToEh(mu, en):
+    return en/(2*mu)
+
+def getFloat(inp, lineNo):
+    try:
+        out = float(inp)
+    except ValueError:
+        print "INPUT ERROR: line ",lineNo
+        print "Unable to read expected float."
+        sys.exit()
+    return out
+
+def parseLevels(levels, GUI=None):
+    levelsToFind = []
+    raw = levels.split(',')
+    for item in raw:
+        item = item.strip()
+        if item.find('-') != -1:
+            temp = item.split('-')
+            try:
+                for i in range(int(temp[0]), int(temp[1])+1):
+                    levelsToFind.append(i)
+            except ValueError:
+                if GUI is not None:
+                    GUI.add_line("ERROR: Problem in level choice!")
+                    GUI.add_line("Choose individual levels with comma separation")
+                    GUI.add_line("or a range with start-stop")
+                else:
+                    print "ERROR: Problem in level choice!"
+                    print "Choose individual levels with comma separation"
+                    print "or a range with start-stop"
+                return []
+        else:
+            try:
+                levelsToFind.append(int(item))
+            except ValueError:
+                if GUI is not None:
+                    GUI.add_line("ERROR: Problem in level choice!")
+                    GUI.add_line("Choose individual levels with comma separation")
+                    GUI.add_line("or a range with start-stop")
+                else:
+                    print "ERROR: Problem in level choice!"
+                    print "Choose individual levels with comma separation"
+                    print "or a range with start-stop"
+                return []
+
+    return levelsToFind
+
+
 
 def convertMassToAU(M):
     return M*1822.88839
@@ -313,60 +377,43 @@ def morseResidual(Rlist, Ulist, re, de, alpha):
             sumOSqrs += (morse(alpha, re, de, Rlist[i]) - Ulist[i])**2
     return sumOSqrs
 
-def plotFitting(calc, data, alpha):
+def plotFitting(GUI, data, alpha):
     # Generate list of morse points
     data.morseList = []
     for r in data.Rlist:
         data.morseList.append(morse(alpha, data.re, data.D0, r))
 
-    # else:
-    #     fig = plt.figure()
-    #     Uplot = fig.add_subplot(111)
-    #     Uplot.set_xlim([min(data.Rlist), max(data.Rlist)])
-    #     Uplot.set_ylim([min(data.Ulist), 1.1*data.de])
-        
-    #     Uplot.plot(data.Rlist, data.Ulist, color='green', label="Input Potential")
-    #     Uplot.plot(data.Rlist, data.morseList, color='red', label="Fit Morse", linestyle='--')
-        
-    #     Uplot.set_xlabel("Separation ($r_0$)")
-    #     Uplot.set_ylabel("Reduced Mass Scaled Potential (2*Eh*mu)")
-    #     Uplot.legend()
-        
-    #     Uplot.set_title("Fit \nAlpha: "+str(alpha))
-
-    #     return fig    
-
 def assessFit( alpha, Rlist, Ulist, re, de):
     return morseResidual(Rlist, Ulist, re, de, alpha)
 
-def fitMorse(data, calc):
+def fitMorse(data, GUI):
 
     result =  minimize_scalar(assessFit, args=(data.Rlist, data.Ulist, data.re, data.D0))
 
     alpha = result.x
-    if calc is not None:
-        calc.add_line("Morse potential fit for starting guess")
-        calc.add_line("Alpha: "+str(alpha))
-        calc.add_line("Sum of squares: "+str(assessFit(alpha, data.Rlist, data.Ulist, data.re, data.D0)))
+    if GUI is not None:
+        GUI.add_line("Morse potential fit for starting guess")
+        GUI.add_line("Alpha: "+str(alpha))
+        GUI.add_line("Sum of squares: "+str(assessFit(alpha, data.Rlist, data.Ulist, data.re, data.D0)))
     else:
         print "Morse potential fit for starting guess"
         print "Alpha: "+str(alpha)
         print "Sum of squares: "+str(assessFit(alpha, data.Rlist, data.Ulist, data.re, data.D0))
 
     # None if GUI is being used. Otherwise contains the matplotlib figure
-    fig = plotFitting(calc, data, alpha)
+    plotFitting(GUI, data, alpha)
 
-    return alpha, fig
+    return alpha
 
-def morseEigs(data, calc, alpha):
+def morseEigs(data, GUI, alpha):
     # mass enters as reduced mass in Daltons for agreement with Cooley
     eig = 0
 
     k = int((4*math.pi*math.sqrt(2*data.muma*data.D0)/(2*math.pi*alpha)-1)/2.0)
 
-    if calc is not None:
-        calc.add_line("# Eigenstates: " + str(k))
-        calc.add_line("Morse Eigenvalues", True)
+    if GUI is not None:
+        GUI.add_line("# Eigenstates: " + str(k))
+        GUI.add_line("Morse Eigenvalues", True)
     else:
         print "# Eigenstates: " + str(k)
         print "\n================="
@@ -379,21 +426,21 @@ def morseEigs(data, calc, alpha):
         eig = -data.D0 + 2*math.pi*omega0*(n+0.5) - ((2*math.pi)**2*omega0**2) / (4.0*data.D0) * (n+0.5)**2
 
         data.guessEigVals.append(eig)
-        if calc is not None:
-            calc.add_line("v"+str(n)+": "+str(eig))
+        if GUI is not None:
+            GUI.add_line("v"+str(n)+": "+str(eig))
         else:
             print "v"+str(n)+": "+str(eig)
         n += 1
     
-    if calc is not None:
-        calc.guessEigList = data.guessEigVals[:]
+    if GUI is not None:
+        GUI.guessEigList = data.guessEigVals[:]
 
     return 
 
-def generateStartingE(data, calc=None):
-    alpha, fig = fitMorse(data, calc)
-    morseEigs(data, calc, alpha)
-    return fig
+def generateStartingE(data, GUI=None):
+    alpha = fitMorse(data, GUI)
+    morseEigs(data, GUI, alpha)
+    return 
 
 def nextPout(i, Rlist, Ulist, E, h, Plist):
     if False:   # Simple Integration formula
@@ -413,9 +460,12 @@ def nextPin(i, Rlist, Ulist, E, h, Plist):
         num = h**2*(Ulist[i] - E) * Plist[i] + 2*Yi - Yip1
         return num / (1 - (h**2/12.0)*(Ulist[i-1]-E))
 
-def integrate(calc, data, E):
+def integrate(GUI, data, E):
     if (E > data.Ulist[-1]):
-        calc.add_line( "Unbound state!")
+        if GUI is not None:
+            GUI.add_line( "Unbound state!")
+        else:
+            print "Unbound stat!"
         return "UNBOUND"
 
     # Integrate inwards
@@ -436,9 +486,9 @@ def integrate(calc, data, E):
             break
 
     if (m == -1):
-        if calc is not None:
-            calc.add_line("ERROR in integration!")
-            calc.add_line("Inward integration never hits maximum.")
+        if GUI is not None:
+            GUI.add_line("ERROR in integration!")
+            GUI.add_line("Inward integration never hits maximum.")
         else:
             print "ERROR in integration!"
             print "Inward integration never hits maximum."
@@ -496,9 +546,9 @@ def correctE( Pout, Pin, Ulist, E, h, m):
     return (yBit + (Ulist[m] - E)*Pout[m])/sumP2
 
 
-def optimizeEigenvalue(calc, data, E):
-    if calc is not None:
-        calc.add_line("Initial Guess: "+str(E))
+def optimizeEigenvalue(GUI, data, E):
+    if GUI is not None:
+        GUI.add_line("Initial Guess: "+str(E))
     else:
         print "Initial Guess: "+str(E)
 
@@ -508,28 +558,16 @@ def optimizeEigenvalue(calc, data, E):
     it = 0
     while (abs(dE) >= tol):
         try:
-            Pout, Pin, m = integrate(calc, data, E)
+            Pout, Pin, m = integrate(GUI, data, E)
             Pout, Pin = normaliseIntegration(Pout, Pin, m)
-
-            #if False:
-            #    Pfig = plt.figure()
-            #    Pplot = Pfig.add_subplot(111)
-            #    Pplot.set_xlim([min(Rlist), max(Rlist)])
-            #    Pplot.set_ylim([min([min(Pin),min(Pout)]), max([max(Pin),max(Pout)])])
-            #
-            #    Pplot.set_title("Iteration: " +str(it))
-            #    Pplot.plot(Rlist[:m], Pout[:m], color='green')
-            #    Pplot.plot(Rlist[m:], Pin[m:], color='red')
-            #
-            #    Pfig.show()
 
             dE = correctE( Pout, Pin, data.Ulist, E, data.h, m)
 
             E += dE
-            if calc is not None:
-                calc.add_line("\n-----------\n"+"Iteration "+str(it)+"\n-----------")
-                calc.add_line("Correction: "+str(dE))
-                calc.add_line("New E: "+str(E))
+            if GUI is not None:
+                GUI.add_line("\n-----------\n"+"Iteration "+str(it)+"\n-----------")
+                GUI.add_line("Correction: "+str(dE))
+                GUI.add_line("New E: "+str(E))
             else:
                 print "\n-----------\n"+"Iteration "+str(it)+"\n-----------"
                 print "Correction: "+str(dE)
@@ -537,9 +575,9 @@ def optimizeEigenvalue(calc, data, E):
             it += 1
         except ValueError as e:
             return ("UNBOUND", "UNBOUND")
-    if calc is not None:
-        calc.add_line("\n\nConverged! At: "+str(E))
-        calc.add_line("With dE: "+str(dE))
+    if GUI is not None:
+        GUI.add_line("\n\nConverged! At: "+str(E))
+        GUI.add_line("With dE: "+str(dE))
     else:
         print "\n\nConverged! At: "+str(E)
         print "With dE: "+str(dE)
