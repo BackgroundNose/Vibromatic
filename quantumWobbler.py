@@ -8,9 +8,9 @@ from pyface.api import FileDialog, confirm, YES
 from Solver import *
 
 class Calculation(HasTraits):
-    M1 = Float()
-    M2 = Float()
-    D0 = Float()
+    M1 = Float(2)
+    M2 = Float(2)
+    D0 = Float(-0.00125352)
     Re = Float()
     levels = String("0,1,2-6")
     levelsToFind = []
@@ -132,12 +132,14 @@ class Calculation(HasTraits):
         if self.D0 == 0:
             self.add_line("Set a D0 first!")
             return
+
         if (min(self.Ulist) < 0):
             if len(self.morseList) > 0 and min(self.morseList) >= 0:
                 setUtoDe(self.morseList, self.D0)
             self.plotRangeY = (-self.D0, self.D0/10.0)
         else:
             self.plotRangeY = (0, self.D0*1.1)
+   
         self.plotRU()
 
     def _savePlot_fired(self):
@@ -167,11 +169,37 @@ class Calculation(HasTraits):
             self.add_line("I failed to open "+str(dialog.path))
             return
 
+    def storeDataInDetails(self):
+        out = Details()
+
+        out.Rlist = self.Rlist[:]
+        out.Ulist = self.Ulist[:]
+        out.re = self.Re
+        out.mu = self.mu
+        out.muma = self.muma
+        out.M1 = self.M1
+        out.M2 = self.M2
+        out.D0 = abs(self.D0)
+        out.levels = self.levelsToFind[:]
+        out.guessEigVals = self.guessEigList[:]
+        out.convergedValues = self.convergedValues[:]
+        out.levelsToFind = self.levelsToFind[:]
+        return out
+
+    def updateFromDetails(self, data):
+        self.guessEigList = data.guessEigVals[:]
+        self.convergedValues = data.convergedValues[:]
+        self.levelsToFind = data.levelsToFind[:]
+        self.morseList = data.morseList[:]
+        self.Ulist = data.Ulist[:]
+        self.D0 = data.D0
+
+
     def _solve_fired(self):
-        # Parse the levels asked for. Return False on error.
-        if not self.parseLevels():
-            return
+        
         self.add_line("Beginning solver",title=True)
+
+        self.D0 = abs(self.D0)
 
         if self.dataMissing():
             return
@@ -182,7 +210,6 @@ class Calculation(HasTraits):
             self.add_line("Re set as: "+str(self.Re))
 
         setUtoRe(self.Ulist)
-        #self._toInterest_fired()
 
         self.muma = reducedMass(self.M1, self.M2)
         self.mu = reducedMass(convertMassToAU(self.M1), convertMassToAU(self.M2))
@@ -190,52 +217,23 @@ class Calculation(HasTraits):
         self.add_line("Reduced mass (au) = "+str(self.mu))
         self.add_line("Reduced mass (ma) = "+str(self.muma))
         self.Ulist, self.D0 = convertUto2ReducedAU(self.mu, self.Ulist, self.D0)
+
+
         self.scaled = True
 
-        generateStartingE(self)
+        data = self.storeDataInDetails()
+# Parse the levels asked for. Return False on error.
+        data.levelsToFind = parseLevels(self.levels, self)
+        if len(data.levelsToFind) == 0:
+            return
 
-        setUtoDe(self.Ulist, self.D0)
+        data  = driver(data, self)
 
-        if len(self.guessEigList) == 0:
-            self.add_line("No bound Eigenvalues were found for guess potential.")
-            self.add_line("For the hell of it, lets try optimizing something very nearly unbound...")
+        self.updateFromDetails(data)
 
-            # try looking for one right at the dissociation limit.
-            self.guessEigList.append(-self.D0*0.95)
-
-        self.h = self.Rlist[-1] - self.Rlist[-2]      # This is the separation between R points
-
-        self.add_line("\nR Points Separation: "+str(self.h))
-
-        self.convergedValues = [0.0]*len(self.guessEigList)
-        for val in self.levelsToFind:
-            if val >= len(self.guessEigList):
-                self.add_line("\nERROR: No guess state for level "+str(val))
-                self.add_line("Possbily state is unbound, manual guesses to be implimented eventually...")
-            else:
-                self.add_line("Optimizing level "+str(val),True)
-                self.convergedValues[val], tlist = optimizeEigenvalue(self, self.Rlist, self.Ulist, self.guessEigList[val], self.h)
-                self.Plists.append(tlist)
-
-        self.Ulist, self.D0 = revertFrom2ReducedAU(self.mu, self.Ulist, self.D0)
-        self.morseList, tmp = revertFrom2ReducedAU(self.mu, self.morseList, 0.0)
         self.scaled = False
 
-        for val in self.levelsToFind:
-            if val < len(self.guessEigList):
-                if self.convergedValues[val] != "UNBOUND":
-                    self.convergedValues[val] = enToEh(self.mu, self.convergedValues[val])
-
         self._toInterest_fired()
-
-        self.add_line("Summary",True)
-        # Final Print Roundup
-        for val in self.levelsToFind:
-            if val < len(self.guessEigList):
-                if self.convergedValues[val] != "UNBOUND":
-                    self.add_line("v"+str(val)+": " + str(self.convergedValues[val])+" Eh\t"+str(abs(self.convergedValues[val])*219474.63)+" cm-1")
-                else:
-                    self.add_line("v"+str(val)+" is not a bound state!")
 
 
     def add_line(self, string, title=False):
@@ -259,8 +257,10 @@ class Calculation(HasTraits):
         else:
             plotData = ArrayPlotData(x=self.Rlist, y=self.Ulist)
 
+
         for val in self.levelsToFind:
-            if val < len(self.guessEigList):
+            if val < len(self.convergedValues):
+                print val, self.convergedValues[val]
                 plotData.set_data("eig"+str(val), [self.convergedValues[val], self.convergedValues[val]])
 
         plot = Plot(plotData)
@@ -269,7 +269,8 @@ class Calculation(HasTraits):
             plot.plot(("x","morse"), type = "line", color = "red")
 
         for val in self.levelsToFind:
-            if val < len(self.guessEigList):
+            if val < len(self.convergedValues):
+
                 plot.plot(("eigX","eig"+str(val)), type="line", color="green")
 
         plot.plot(("x","y"), type = "line", color = "blue")
@@ -312,31 +313,7 @@ class Calculation(HasTraits):
             fail = True
         return fail
 
-    def parseLevels(self):
-        self.levelsToFind = []
-        raw = self.levels.split(',')
-        for item in raw:
-            item = item.strip()
-            if item.find('-') != -1:
-                temp = item.split('-')
-                try:
-                    for i in range(int(temp[0]), int(temp[1])+1):
-                        self.levelsToFind.append(i)
-                except ValueError:
-                    self.add_line("ERROR: Problem in level choice!")
-                    self.add_line("Choose individual levels with comma separation")
-                    self.add_line("or a range with start-stop")
-                    return False
-            else:
-                try:
-                    self.levelsToFind.append(int(item))
-                except ValueError:
-                    self.add_line("ERROR: Problem in level choice!")
-                    self.add_line("Choose individual levels with comma separation")
-                    self.add_line("or a range with start-stop")
-                    return False
-
-        return True
+    
 
     def greeting(self):
         self.add_line("==========================")
